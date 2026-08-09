@@ -9,11 +9,11 @@ FloatOrArray = float | np.ndarray
 
 def lgd_basic(pc: FloatOrArray, rr: FloatOrArray) -> FloatOrArray:
     """Basic two-factor LGD estimate, ignoring re-default entirely (derivation.md, "Basic two-factor model").
-    
+
     Args:
         pc: Cure probability.
         rr: Recovery rate on exposures that never cure.
-    
+
     Returns:
         The basic LGD estimate.
     """
