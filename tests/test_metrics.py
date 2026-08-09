@@ -42,8 +42,32 @@ def test_summarize_returns_mean_and_sd_columns():
         "lgd_prd_error_sd",
         "lgd_new_error_mean",
         "lgd_new_error_sd",
+        "lgd_true_mean",
+        "lgd_true_sd",
+        "lgd_basic_mean",
+        "lgd_basic_sd",
+        "lgd_lgc_mean",
+        "lgd_lgc_sd",
+        "lgd_prd_mean",
+        "lgd_prd_sd",
+        "lgd_new_mean",
+        "lgd_new_sd",
+        "n_replications",
     }
     assert set(summary.columns) == expected
+
+
+def test_summarize_n_replications_matches_group_size():
+    results = run_baseline(
+        sweep_param="prd",
+        sweep_values=[0.1, 0.2],
+        base_params=BASELINE,
+        n_exposures=500,
+        n_replications=7,
+        rng=np.random.default_rng(0),
+    )
+    summary = summarize(results, sweep_param="prd")
+    assert (summary["n_replications"] == 7).all()
 
 
 def test_summarize_mean_matches_manual_calculation():

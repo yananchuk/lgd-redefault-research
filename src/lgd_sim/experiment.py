@@ -35,31 +35,36 @@ def run_baseline(
         rng: Seeded random generator, advanced across every replication.
 
     Returns:
-        One row per (sweep value, replication), with the swept parameter's value
-        and each formula's relative error against `LGD_true`. Left unaggregated;
-        mean and standard deviation per sweep value are computed in metrics.py.
+        One row per (sweep value, replication), with the swept parameter's value,
+        `lgd_true`, each formula's raw predicted value, and each formula's relative
+        error against `lgd_true`. Left unaggregated; mean and standard deviation per
+        sweep value are computed in metrics.py.
     """
     rows = []
     for value in sweep_values:
         params = dataclasses.replace(base_params, **{sweep_param: value})
         for _ in range(n_replications):
             exposures = simulate_portfolio(params, n_exposures, rng)
-            lgd_true = true_lgd(exposures)
+            lgd_true_value = true_lgd(exposures)
             inputs = estimate_formula_inputs(exposures)
+
+            lgd_basic_value = lgd_basic(inputs["pc"], inputs["rr"])
+            lgd_lgc_value = lgd_lgc(inputs["pc"], inputs["rr"], inputs["lgc"])
+            lgd_prd_value = lgd_prd(inputs["pc"], inputs["rr"], inputs["prd"])
+            lgd_new_value = lgd_new(inputs["pc"], inputs["rr"], inputs["prd"], inputs["rr_brd"])
 
             rows.append(
                 {
                     sweep_param: value,
-                    "lgd_basic_error": lgd_basic(inputs["pc"], inputs["rr"]) / lgd_true - 1,
-                    "lgd_lgc_error": lgd_lgc(inputs["pc"], inputs["rr"], inputs["lgc"]) / lgd_true
-                    - 1,
-                    "lgd_prd_error": lgd_prd(inputs["pc"], inputs["rr"], inputs["prd"]) / lgd_true
-                    - 1,
-                    "lgd_new_error": lgd_new(
-                        inputs["pc"], inputs["rr"], inputs["prd"], inputs["rr_brd"]
-                    )
-                    / lgd_true
-                    - 1,
+                    "lgd_true": lgd_true_value,
+                    "lgd_basic": lgd_basic_value,
+                    "lgd_lgc": lgd_lgc_value,
+                    "lgd_prd": lgd_prd_value,
+                    "lgd_new": lgd_new_value,
+                    "lgd_basic_error": lgd_basic_value / lgd_true_value - 1,
+                    "lgd_lgc_error": lgd_lgc_value / lgd_true_value - 1,
+                    "lgd_prd_error": lgd_prd_value / lgd_true_value - 1,
+                    "lgd_new_error": lgd_new_value / lgd_true_value - 1,
                 }
             )
 
