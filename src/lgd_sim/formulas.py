@@ -57,9 +57,10 @@ def lgd_new(
 ) -> FloatOrArray:
     """Re-default-aware LGD estimate crediting recovery collected before re-default.
 
-    Derived from the accounting identity that a re-defaulted exposure is
-    charged the full LGD again on re-entry (derivation.md, "Re-default-aware
-    model"). Collapses to `lgd_basic` when `prd == 0`.
+    Derived from the accounting identity that a re-defaulted exposure's
+    balance is paid down at rate `rr_brd` before the fresh loss rate `rr`
+    applies to what remains (derivation.md, "Re-default-aware model").
+    Collapses to `lgd_basic` when `prd == 0`.
 
     Args:
         pc: Cure probability.
@@ -70,4 +71,4 @@ def lgd_new(
     Returns:
         The re-default-aware LGD estimate.
     """
-    return ((1 - pc) * (1 - rr) - pc * prd * rr_brd) / (1 - pc * prd)
+    return (1 - rr) * ((1 - pc) - pc * prd * rr_brd) / (1 - pc * prd)

@@ -14,19 +14,15 @@ Three formulas for estimating LGD are compared here:
 
 - The **basic two-factor model** treats every cured loan as if it will never lose any further value, ignoring the possibility of re-default entirely.
 - The **loss-given-cure (LGC) add-on** adds a flat surcharge for cured loans, estimated empirically from how much cured loans actually lose on average, without modeling why.
-- The **re-default-aware model** treats a cured loan as genuinely re-entering the pool of at-risk loans, and introduces two more explicit inputs: `Prd`, the probability that a cured loan re-defaults before the loan's maturity, and `RR_brd`, the recovery collected during the time the loan spent cured, before it fell back into default.
+- The **re-default-aware model** treats a cured loan as genuinely re-entering the pool of at-risk loans, and introduces two more explicit inputs on top of the cure probability ($PC$) and recovery rate ($RR$) the simpler models already use: $P_{rd}$, the probability that a cured loan re-defaults before the loan's maturity, and $RR_{brd}$, the recovery collected during the time the loan spent cured, before it fell back into default.
 
 The re-default-aware formula, the one this project centers on:
 
-$$LGD_{new} = \frac{(1-PC)(1-RR) - PC \cdot Prd \cdot RR_{brd}}{1 - PC \cdot Prd}$$
-
-where `PC` is the probability that a defaulted loan cures, and `RR` is the recovery rate on loans that default and never cure at all.
-
-The full derivation of all three formulas, including the consistency check that they collapse to each other when `Prd = 0` (no re-defaults, nothing left to correct for), is in [`docs/derivation.md`](docs/derivation.md).
+$$LGD_{new} = \frac{(1-RR)\big[(1-PC) - PC \cdot P_{rd} \cdot RR_{brd}\big]}{1 - PC \cdot P_{rd}}$$
 
 ## Research goals
 
-1. **Baseline bias.** Under correctly specified assumptions, how much do the basic and LGC formulas diverge from the re-default-aware one, and how does that gap move with `Prd`, `PC`, and cure timing?
+1. **Baseline bias.** Under correctly specified assumptions, how much do the basic and LGC formulas diverge from the re-default-aware one, and how does that gap move with $P_{rd}$, $PC$, and cure timing?
 2. **Complexity vs. robustness.** At what reference-dataset size or re-default count does the added estimation variance from the more complex formula's extra parameters offset its lower structural bias?
 3. **Misspecification.** Does the more complex formula's advantage survive when the data is generated under assumptions it doesn't know about?
 
