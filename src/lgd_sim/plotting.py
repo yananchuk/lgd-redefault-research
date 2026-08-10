@@ -81,22 +81,31 @@ def _draw_lgd_levels(ax: Axes, summary: pd.DataFrame, sweep_param: str, x_as_per
         ax.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
 
 
-def _draw_bias_sweep(ax: Axes, summary: pd.DataFrame, sweep_param: str, x_as_percent: bool) -> None:
-    """Draw each formula's mean relative error against a swept DGP parameter, onto an existing Axes."""
+def _draw_bias_sweep(
+    ax: Axes,
+    summary: pd.DataFrame,
+    sweep_param: str,
+    x_as_percent: bool,
+    stat: str = "mean",
+    x_log: bool = False,
+) -> None:
+    """Draw each formula's relative-error mean or SD against a swept parameter, onto an existing Axes."""
     x = summary[sweep_param]
     for formula, color in FORMULA_COLORS.items():
         ax.plot(
             x,
-            summary[f"{formula}_mean"],
+            summary[f"{formula}_{stat}"],
             label=FORMULA_LABELS[formula],
             color=color,
             linewidth=2,
             linestyle=FORMULA_LINESTYLES[formula],
         )
-    ax.set_ylabel("Relative error")
+    ax.set_ylabel("Relative error" if stat == "mean" else "Error SD")
     ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=1))
     if x_as_percent:
         ax.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+    if x_log:
+        ax.set_xscale("log")
 
 
 def plot_lgd_levels(
@@ -126,9 +135,15 @@ def plot_lgd_levels(
 
 
 def plot_bias_sweep(
-    summary: pd.DataFrame, sweep_param: str, x_label: str, title: str, x_as_percent: bool = True
+    summary: pd.DataFrame,
+    sweep_param: str,
+    x_label: str,
+    title: str,
+    x_as_percent: bool = True,
+    stat: str = "mean",
+    x_log: bool = False,
 ) -> Figure:
-    """Plot each formula's mean relative error against a swept DGP parameter.
+    """Plot each formula's relative-error mean or SD against a swept parameter.
 
     Args:
         summary: Output of `metrics.summarize`, one row per sweep value.
@@ -137,13 +152,96 @@ def plot_bias_sweep(
         title: Chart title.
         x_as_percent: Whether the swept parameter is a 0-1 fraction (formatted
             as a percentage) rather than a plain count or other unit.
+        stat: Which per-formula statistic to plot, "mean" (bias) or "sd".
+        x_log: Whether to plot the x-axis on a log scale, useful when the
+            sweep spans multiple orders of magnitude.
 
     Returns:
         The rendered figure, ready to save or display.
     """
     set_style()
     fig, ax = plt.subplots()
-    _draw_bias_sweep(ax, summary, sweep_param, x_as_percent)
+    _draw_bias_sweep(ax, summary, sweep_param, x_as_percent, stat=stat, x_log=x_log)
+    ax.set_xlabel(x_label)
+    ax.set_title(title)
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+def plot_bias_variance_decomposition(
+    summary: pd.DataFrame, sweep_param: str, x_label: str, title: str, x_log: bool = True
+) -> Figure:
+    """Plot each formula's bias and standard deviation side by side against a swept parameter.
+
+    Args:
+        summary: Output of `metrics.summarize`, one row per sweep value.
+        sweep_param: Name of the swept column, used as the x-axis values.
+        x_label: Human-readable x-axis label.
+        title: Figure title.
+        x_log: Whether to plot the x-axis on a log scale, useful when the
+            sweep spans multiple orders of magnitude.
+
+    Returns:
+        The rendered figure, ready to save or display.
+    """
+    set_style()
+    fig, (ax_bias, ax_sd) = plt.subplots(1, 2, figsize=(FIGURE_SIZE[0] * 1.7, FIGURE_SIZE[1]))
+
+    _draw_bias_sweep(ax_bias, summary, sweep_param, x_as_percent=False, stat="mean", x_log=x_log)
+    ax_bias.set_title("Bias")
+    ax_bias.set_xlabel(x_label)
+
+    _draw_bias_sweep(ax_sd, summary, sweep_param, x_as_percent=False, stat="sd", x_log=x_log)
+    ax_sd.set_title("Standard deviation")
+    ax_sd.set_xlabel(x_label)
+    ax_sd.set_ylabel(None)
+
+    handles, labels = ax_bias.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
+    return fig
+
+
+def _draw_rmse_sweep(ax: Axes, summary: pd.DataFrame, x_column: str, x_log: bool) -> None:
+    """Draw each formula's RMSE against a swept complexity parameter, onto an existing Axes."""
+    x = summary[x_column]
+    for formula, color in FORMULA_COLORS.items():
+        ax.plot(
+            x,
+            summary[f"{formula}_rmse"],
+            label=FORMULA_LABELS[formula],
+            color=color,
+            linewidth=2,
+            linestyle=FORMULA_LINESTYLES[formula],
+        )
+    ax.set_ylabel("RMSE")
+    ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=2))
+    if x_log:
+        ax.set_xscale("log")
+
+
+def plot_rmse_sweep(
+    summary: pd.DataFrame, x_column: str, x_label: str, title: str, x_log: bool = True
+) -> Figure:
+    """Plot each formula's RMSE against a swept complexity parameter.
+
+    Args:
+        summary: Output of `metrics.summarize_rmse`, one row per sweep value.
+        x_column: Name of the column to use as the x-axis (e.g. `n_exposures`
+            or `n_redefault_mean`).
+        x_label: Human-readable x-axis label.
+        title: Chart title.
+        x_log: Whether to plot the x-axis on a log scale, useful when the
+            sweep spans multiple orders of magnitude.
+
+    Returns:
+        The rendered figure, ready to save or display.
+    """
+    set_style()
+    fig, ax = plt.subplots()
+    _draw_rmse_sweep(ax, summary, x_column, x_log)
     ax.set_xlabel(x_label)
     ax.set_title(title)
     ax.legend()

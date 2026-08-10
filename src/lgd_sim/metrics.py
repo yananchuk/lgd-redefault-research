@@ -30,3 +30,25 @@ def summarize(results: pd.DataFrame, sweep_param: str) -> pd.DataFrame:
     summary = summary.reset_index()
     summary["n_replications"] = grouped.size().to_numpy()
     return summary
+
+
+def summarize_rmse(results: pd.DataFrame, sweep_param: str) -> pd.DataFrame:
+    """Aggregate per-replication relative errors into RMSE per sweep value.
+
+    Args:
+        results: Raw output of `experiment.run_complexity_sweep`, one row per
+            (sweep value, replication).
+        sweep_param: Name of the swept column to group by.
+
+    Returns:
+        One row per sweep value, with `{column}_rmse` for each formula's
+        relative error column, `n_redefault_mean` (the mean observed
+        re-default count across replications), and `n_replications`.
+    """
+    grouped = results.groupby(sweep_param)
+    rmse = (results[ERROR_COLUMNS] ** 2).groupby(results[sweep_param]).mean() ** 0.5
+    rmse.columns = [f"{column}_rmse" for column in rmse.columns]
+    summary = rmse.reset_index()
+    summary["n_redefault_mean"] = grouped["n_redefault"].mean().to_numpy()
+    summary["n_replications"] = grouped.size().to_numpy()
+    return summary

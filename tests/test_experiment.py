@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from lgd_sim.dgp import DGPParams
-from lgd_sim.experiment import run_baseline
+from lgd_sim.experiment import run_baseline, run_complexity_sweep
 
 BASELINE = DGPParams(pc=0.2, prd=0.1)
 ERROR_COLUMNS = {"lgd_basic_error", "lgd_lgc_error", "lgd_prd_error", "lgd_new_error"}
@@ -96,3 +96,56 @@ def test_run_baseline_rejects_unknown_sweep_param():
             n_replications=1,
             rng=np.random.default_rng(0),
         )
+
+
+def test_run_complexity_sweep_returns_expected_columns():
+    result = run_complexity_sweep(
+        n_exposures_values=[200, 1000],
+        base_params=BASELINE,
+        n_replications=3,
+        rng=np.random.default_rng(0),
+    )
+    expected = ERROR_COLUMNS | VALUE_COLUMNS | {"n_exposures", "n_redefault"}
+    assert set(result.columns) == expected
+
+
+def test_run_complexity_sweep_row_count_matches_sweep_times_replications():
+    result = run_complexity_sweep(
+        n_exposures_values=[200, 500, 1000],
+        base_params=BASELINE,
+        n_replications=4,
+        rng=np.random.default_rng(0),
+    )
+    assert len(result) == 3 * 4
+
+
+def test_run_complexity_sweep_reproducible_given_same_seed():
+    kwargs = {
+        "n_exposures_values": [200, 1000],
+        "base_params": BASELINE,
+        "n_replications": 3,
+    }
+    a = run_complexity_sweep(rng=np.random.default_rng(42), **kwargs)
+    b = run_complexity_sweep(rng=np.random.default_rng(42), **kwargs)
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_run_complexity_sweep_sweeps_n_exposures():
+    result = run_complexity_sweep(
+        n_exposures_values=[200, 1000],
+        base_params=BASELINE,
+        n_replications=2,
+        rng=np.random.default_rng(0),
+    )
+    assert set(result["n_exposures"]) == {200, 1000}
+
+
+def test_run_complexity_sweep_redefault_count_grows_with_n_exposures():
+    result = run_complexity_sweep(
+        n_exposures_values=[200, 20_000],
+        base_params=BASELINE,
+        n_replications=5,
+        rng=np.random.default_rng(0),
+    )
+    mean_by_n = result.groupby("n_exposures")["n_redefault"].mean()
+    assert mean_by_n[20_000] > mean_by_n[200]
