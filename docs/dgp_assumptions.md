@@ -4,17 +4,17 @@ Every assumption the simulation depends on gets a decision recorded here before 
 
 ## Summary
 
-| Component | Baseline | Misspecification variant |
+| Component | Baseline | Alternative scenario tested |
 |---|---|---|
-| Recovery rates | $rr$, $rr_{ard}$ i.i.d. $\text{Beta}(0.3, 0.3)$ | $rr_{ard} \sim \text{Beta}(0.15, 0.4)$ (lower mean) |
-| EAD | $ead \sim \mathcal{N}(1, 0.2)$, drawn once per exposure, carried through unchanged | Deterministic function of time since cure |
+| Recovery rates | $rr$, $rr_{ard}$ i.i.d. $\text{Beta}(0.3, 0.3)$ | Misspecification: $rr_{ard} \sim \text{Beta}(0.15, 0.4)$ (lower mean) |
+| EAD | $ead \sim \mathcal{N}(1, 0.2)$, drawn once per exposure, carried through unchanged | Misspecification: deterministic function of time since cure |
 | Cure timing | $t_{cure} \sim \text{Poisson}(\text{mean cure month})$ | unchanged |
-| Re-default timing | $t_{rd} \sim \text{Discrete-Uniform}(0, T_{maturity} - t_{cure})$ (flat hazard) | Front-loaded hazard, decaying after cure |
+| Re-default timing | $t_{rd} \sim \text{Discrete-Uniform}(0, T_{maturity} - t_{cure})$ (flat hazard) | unchanged |
 | Maturity | Fixed at $T_{maturity} = 60$ months | unchanged |
 | $PC$, $P_{rd}$ | Fixed portfolio-level scalars, no covariates or macro effects | unchanged |
 | Re-default cycles | One cure-to-re-default cycle per exposure | unchanged |
 | Sensitivity sweep | $PC$, $P_{rd}$ swept 0-50%, base case $PC$ ~20%, $P_{rd}$ ~10% | n/a |
-| Formula inputs | $PC$, $P_{rd}$, $RR$, $RR_{brd}$ re-estimated from the simulated reference dataset (inflated-denominator $PC$), not the true generating parameters | unchanged |
+| Formula inputs | $PC$, $P_{rd}$, $RR$, $RR_{brd}$ re-estimated from the simulated reference dataset (inflated-denominator $PC$), not the true generating parameters | Reference-dataset construction check: nine-month re-default merge rule (EBA/GL/2017/16 §101) applied or not |
 
 ## Recovery rate distributions
 
@@ -32,11 +32,17 @@ $ead \sim \mathcal{N}(1, 0.2)$, drawn once per exposure at first default and car
 
 ## Cure timing
 
-$t_{cure} \sim \text{Poisson}(\text{mean cure month})$, unchanged across all experiments. Reasonable default, and not something the central result is sensitive to.
+$t_{cure} \sim \text{Poisson}(\text{mean cure month})$, capped at $T_{maturity} - 1$, unchanged across all experiments. The cap only matters when mean cure month is pushed well past its baseline value of 5: an uncapped draw can occasionally exceed $T_{maturity}$, which would model a cure happening after the loan's own contractual maturity and produce a negative re-default window downstream. Reasonable default otherwise, and not something the central result is sensitive to.
 
 ## Re-default timing
 
-$t_{rd} \sim \text{Discrete-Uniform}(0, T_{maturity} - t_{cure})$. This is a flat hazard: an exposure is just as likely to re-default one month after curing as forty months after curing. It's probably the least defensible assumption in the whole DGP, and it matters here specifically because the recovery collected before re-default is a function of elapsed time. The baseline keeps the flat hazard for simplicity. A front-loaded hazard (re-default risk highest right after cure, then decaying) is tested as a misspecification variant. The DGP's parameter list only exposes what it actually uses, no leftover arguments hinting at a mechanism that was never wired up.
+$t_{rd} \sim \text{Discrete-Uniform}(0, T_{maturity} - t_{cure})$. This is a flat hazard: an exposure is just as likely to re-default one month after curing as forty months after curing. It's probably the least defensible assumption in the whole DGP, and it matters here specifically because the recovery collected before re-default is a function of elapsed time. It's kept flat across every experiment in this project, including the reference-dataset construction check: shifting the shape of $t_{rd}$'s distribution alone doesn't change what the formulas estimate, since both the true loss and the estimated inputs read the same realized $t_{rd}$ value for a given exposure either way. What $t_{rd}$'s value is used *for* downstream, not its distribution, is where that check finds something - see "Re-default independence: the nine-month merge rule" below. The DGP's parameter list only exposes what it actually uses, no leftover arguments hinting at a mechanism that was never wired up.
+
+## Re-default independence: the nine-month merge rule
+
+EBA/GL/2017/16 §101 requires institutions to treat a re-default occurring within nine months of an exposure's return to non-defaulted status as a continuation of the original default, not a second independent observation, for the purpose of LGD estimation. This is a distinct rule from the probation period EBA/GL/2016/07 defines before an exposure can exit default status in the first place - GL/2017/16 states explicitly that the nine months apply in addition to the probation period, not in place of it.
+
+Neither this project's own `dgp.py` nor the prior R implementation it's derived from applied this rule before this check: every re-default was counted as an independent observation regardless of how soon after curing it happened. `estimate_formula_inputs`'s `merge_threshold_months` argument adds the compliant treatment as an option (default `None`, preserving the original naive behavior) rather than changing the default, so the baseline and complexity/robustness experiments are unaffected. A re-default with $t_{rd}$ under the threshold is excluded from the cured and re-defaulted counts, and its whole cure-to-re-default episode is folded into the same recovery-rate pool as a genuine first default, using its combined realized recovery $1-(1-rr_{brd})(1-rr_{ard})$ in place of a plain $rr$ draw.
 
 ## Maturity
 
@@ -52,7 +58,7 @@ Only one cure-to-re-default cycle per exposure is modeled. Repeated cycles are o
 
 ## Estimating formula inputs from the simulated data
 
-The four LGD formulas aren't evaluated on the true generating $PC$ and $P_{rd}$ directly. Each simulation run re-estimates $PC$, $P_{rd}$, $RR$, and $RR_{brd}$ from the generated reference dataset the way a bank actually would: $PC$ as cured exposures divided by all logged default observations, where a re-default counts as its own observation per EBA/GL/2016/07, not divided by first defaults alone. That denominator inflation is a second, smaller source of bias, layered on top of the main one (treating the whole cured population as zero-loss regardless of later re-default, see derivation.md), and it's what makes the simulation's formula inputs match what an analyst would actually compute from a real reference dataset rather than an idealized one. $LGD_{true}$ is computed separately, directly from each exposure's realized loss, and never goes through this re-estimation step.
+The four LGD formulas aren't evaluated on the true generating $PC$ and $P_{rd}$ directly. Each simulation run re-estimates $PC$, $P_{rd}$, $RR$, and $RR_{brd}$ from the generated reference dataset the way a bank actually would: $PC$ as cured exposures divided by all logged default observations, not divided by first defaults alone. By default, every re-default counts as its own observation regardless of timing (the naive treatment used throughout the baseline and complexity/robustness experiments); whether that's the right thing to do under EBA/GL/2017/16 §101 is a separate question, addressed in "Re-default independence: the nine-month merge rule" above, not assumed here. That denominator inflation is a second, smaller source of bias, layered on top of the main one (treating the whole cured population as zero-loss regardless of later re-default, see derivation.md), and it's what makes the simulation's formula inputs match what an analyst would actually compute from a real reference dataset rather than an idealized one. $LGD_{true}$ is computed separately, directly from each exposure's realized loss, and never goes through this re-estimation step.
 
 $RR_{brd}$ is estimated as a plain sample mean of $rr_{brd}$ over the re-defaulted subsample, matching how $RR$ is estimated. Both enter the closed form as scalar rates (derivation.md, $PC \cdot P_{rd} \cdot RR_{brd}$). This matches the CRR/EBA calibration convention for LGD parameters. CRR Article 181(1)(a) requires LGD to be estimated as a default-weighted average, and EBA/GL/2017/16 states this explicitly for the observed average LGD (§154: "weighted by the number of defaults included in the calculation") and the long-run average LGD (§150: "weighted by a number of defaults"). $LGC$ and $LGD_{true}$ are loss-dollars-over-EAD-dollars ratios by definition, a separate kind of quantity from a sample-average LGD parameter, so they carry their own EAD weighting under that definition.
 

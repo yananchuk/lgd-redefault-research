@@ -4,7 +4,7 @@ This walks through each formula from the underlying cash-flow accounting, indepe
 
 ## Setup
 
-Consider a portfolio of exposures that have defaulted. A fraction $PC$ of them cure and return to performing status. Of the cured exposures, a fraction $P_{rd}$ re-default before the end of the observation window. Under CRR/EBA GL/2017/16, a re-defaulted exposure is treated as a new, independent default observation, not a continuation of the first one.
+Consider a portfolio of exposures that have defaulted. A fraction $PC$ of them cure and return to performing status. Of the cured exposures, a fraction $P_{rd}$ re-default before the end of the observation window. Under EBA/GL/2017/16 §101, a re-defaulted exposure is treated as a new, independent default observation, not a continuation of the first one, provided the re-default happens nine months or more after the return to non-defaulted status; the formulas below assume that condition holds (see `dgp_assumptions.md`'s "Re-default independence: the nine-month merge rule" for what happens when it doesn't).
 
 $RR$ is the recovery rate on exposures that never cure. $RR_{brd}$ is the recovery collected between curing and re-defaulting, for the exposures that do re-default.
 
@@ -63,7 +63,7 @@ flowchart TD
     D ==> A
 ```
 
-Consider a reference dataset built from $N$ original defaulted exposures. Starting from the naive case, with zero recovery assumed during the cured interval: a cured-then-redefaulted exposure gets charged the full $LGD$ again on re-entry, since it re-enters the reference dataset as a new, independent default under CRR/EBA GL/2016/07:
+Consider a reference dataset built from $N$ original defaulted exposures. Starting from the naive case, with zero recovery assumed during the cured interval: a cured-then-redefaulted exposure gets charged the full $LGD$ again on re-entry, since it re-enters the reference dataset as a new, independent default under EBA/GL/2017/16 §101:
 
 $$LGD = (1-PC)(1-RR) + PC \cdot P_{rd} \cdot LGD$$
 
@@ -74,7 +74,7 @@ $$LGD_{Prd} = \frac{(1-PC)(1-RR)}{1-PC \cdot P_{rd}}$$
 
 This is the naive correction: it fixes the double-counting of cured-then-redefaulted exposures in $PC$, but assumes zero recovery during the cured interval, which throws away real information the $RR_{brd}$ term is meant to capture.
 
-Crediting that recovery back requires more care than a flat subtraction, because the credit reduces the *balance* a redefaulted exposure carries into its fresh loss, not the portfolio-level $LGD$ directly. Under CRR/EBA GL/2016/07, a cohort where $N_c$ exposures cure and $N_{rd}$ of those re-default produces $N + N_{rd}$ logged reference-dataset observations, not $N$, since each re-default is logged as its own observation. $PC$ and $P_{rd}$ are calibrated against that inflated count:
+Crediting that recovery back requires more care than a flat subtraction, because the credit reduces the *balance* a redefaulted exposure carries into its fresh loss, not the portfolio-level $LGD$ directly. Under EBA/GL/2017/16 §101 (assuming every re-default here clears the nine-month independence threshold), a cohort where $N_c$ exposures cure and $N_{rd}$ of those re-default produces $N + N_{rd}$ logged reference-dataset observations, not $N$, since each re-default is logged as its own observation. $PC$ and $P_{rd}$ are calibrated against that inflated count:
 
 $$PC = \frac{N_c}{N + N_{rd}}, \qquad P_{rd} = \frac{N_{rd}}{N_c}$$
 
