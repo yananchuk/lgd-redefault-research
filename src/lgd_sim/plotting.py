@@ -204,6 +204,94 @@ def plot_bias_variance_decomposition(
     return fig
 
 
+def plot_regime_comparison(
+    naive_summary: pd.DataFrame,
+    compliant_summary: pd.DataFrame,
+    sweep_param: str,
+    x_label: str,
+    title: str,
+    x_as_percent: bool = True,
+) -> Figure:
+    """Plot each formula's bias side by side under naive vs merge-compliant estimation.
+
+    Args:
+        naive_summary: Output of `metrics.summarize` restricted to the "naive"
+            regime rows of `experiment.run_merge_compliance`'s output.
+        compliant_summary: Same, restricted to the "compliant" regime rows.
+        sweep_param: Name of the swept column, used as the x-axis values.
+        x_label: Human-readable x-axis label.
+        title: Figure title.
+        x_as_percent: Whether the swept parameter is a 0-1 fraction (formatted
+            as a percentage) rather than a plain count or other unit.
+
+    Returns:
+        The rendered figure, ready to save or display.
+    """
+    set_style()
+    fig, (ax_naive, ax_compliant) = plt.subplots(
+        1, 2, figsize=(FIGURE_SIZE[0] * 1.7, FIGURE_SIZE[1])
+    )
+
+    _draw_bias_sweep(ax_naive, naive_summary, sweep_param, x_as_percent)
+    ax_naive.set_title("Naive estimation")
+    ax_naive.set_xlabel(x_label)
+
+    _draw_bias_sweep(ax_compliant, compliant_summary, sweep_param, x_as_percent)
+    ax_compliant.set_title("Compliant estimation (9-month merge)")
+    ax_compliant.set_xlabel(x_label)
+    ax_compliant.set_ylabel(None)
+
+    handles, labels = ax_naive.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
+    return fig
+
+
+def plot_levels_regime_comparison(
+    naive_summary: pd.DataFrame,
+    compliant_summary: pd.DataFrame,
+    sweep_param: str,
+    x_label: str,
+    title: str,
+    x_as_percent: bool = True,
+) -> Figure:
+    """Plot LGD_true and each formula's predicted LGD level side by side under naive vs compliant estimation.
+
+    Args:
+        naive_summary: Output of `metrics.summarize` restricted to the "naive"
+            regime rows of `experiment.run_merge_compliance`'s output.
+        compliant_summary: Same, restricted to the "compliant" regime rows.
+        sweep_param: Name of the swept column, used as the x-axis values.
+        x_label: Human-readable x-axis label.
+        title: Figure title.
+        x_as_percent: Whether the swept parameter is a 0-1 fraction (formatted
+            as a percentage) rather than a plain count or other unit.
+
+    Returns:
+        The rendered figure, ready to save or display.
+    """
+    set_style()
+    fig, (ax_naive, ax_compliant) = plt.subplots(
+        1, 2, figsize=(FIGURE_SIZE[0] * 1.7, FIGURE_SIZE[1])
+    )
+
+    _draw_lgd_levels(ax_naive, naive_summary, sweep_param, x_as_percent)
+    ax_naive.set_title("Naive estimation")
+    ax_naive.set_xlabel(x_label)
+
+    _draw_lgd_levels(ax_compliant, compliant_summary, sweep_param, x_as_percent)
+    ax_compliant.set_title("Compliant estimation (9-month merge)")
+    ax_compliant.set_xlabel(x_label)
+    ax_compliant.set_ylabel(None)
+
+    handles, labels = ax_naive.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
+    return fig
+
+
 def _draw_rmse_sweep(ax: Axes, summary: pd.DataFrame, x_column: str, x_log: bool) -> None:
     """Draw each formula's RMSE against a swept complexity parameter, onto an existing Axes."""
     x = summary[x_column]

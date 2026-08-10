@@ -31,7 +31,11 @@ def simulate_portfolio(params: DGPParams, n: int, rng: np.random.Generator) -> p
     A cured exposure that later re-defaults is treated as a fresh terminal
     default, its loss applying to the balance left over after the recovery
     already credited during the cure interval (docs/dgp_assumptions.md,
-    "Recovery rate distributions").
+    "Recovery rate distributions"). `t_cure` is capped at `t_maturity - 1`:
+    a cure can't be modeled as happening at or after the loan's own
+    maturity, since there would be no loan left to cure. Without the cap,
+    a high enough `mean_cure_month` lets the uncapped Poisson draw exceed
+    `t_maturity`, which would make the re-default window negative.
 
     Args:
         params: Distributional and portfolio-level parameters.
@@ -53,7 +57,7 @@ def simulate_portfolio(params: DGPParams, n: int, rng: np.random.Generator) -> p
     rr[~cured] = rng.beta(params.rr_alpha, params.rr_beta, n - n_cure)
 
     t_cure = np.full(n, np.nan)
-    t_cure[cured] = rng.poisson(params.mean_cure_month, n_cure)
+    t_cure[cured] = np.minimum(rng.poisson(params.mean_cure_month, n_cure), params.t_maturity - 1)
 
     t_rd = np.full(n, np.nan)
     rr_before_redefault = np.full(n, np.nan)
@@ -101,17 +105,30 @@ def true_lgd(exposures: pd.DataFrame) -> float:
     return exposures["loss"].sum() / exposures["ead"].sum()
 
 
-def estimate_formula_inputs(exposures: pd.DataFrame) -> dict[str, float]:
+def estimate_formula_inputs(
+    exposures: pd.DataFrame, merge_threshold_months: float | None = None
+) -> dict[str, float]:
     """Re-estimate PC, Prd, RR, RR_brd, and LGC from the simulated reference dataset.
 
-    Mirrors how a bank would compute these from a real reference dataset,
-    where a re-default is logged as its own default observation per
-    EBA/GL/2016/07 rather than merged into the first default
-    (docs/dgp_assumptions.md, "Estimating formula inputs from the
-    simulated data"). When a portfolio has no cures or no re-defaults,
-    the corresponding rate defaults to 0.0 rather than NaN, since it
-    always appears multiplied by a probability that is itself 0 in the
-    formulas.
+    Mirrors how a bank would compute these from a real reference dataset. By
+    default every re-default is logged as its own independent default
+    observation regardless of timing (docs/dgp_assumptions.md, "Estimating
+    formula inputs from the simulated data"). When a portfolio has no cures
+    or no re-defaults, the corresponding rate defaults to 0.0 rather than
+    NaN, since it always appears multiplied by a probability that is itself
+    0 in the formulas.
+
+    Args:
+        exposures: Output of `simulate_portfolio`.
+        merge_threshold_months: If set, a re-default within this many months
+            of curing is merged into the original default rather than
+            counted as a second independent observation, per EBA/GL/2017/16
+            §101. The merged exposure's recovery is its whole cure-to-
+            redefault episode, treated as one continuous default; it drops
+            out of the cured/LGC population and no longer contributes an
+            RR_brd credit, since there's no longer a separate pre-redefault
+            interval to credit. If None (the default), every re-default is
+            counted as independent regardless of timing.
 
     Returns:
         A dict with keys "pc", "prd", "rr", "rr_brd", "lgc".
@@ -119,23 +136,36 @@ def estimate_formula_inputs(exposures: pd.DataFrame) -> dict[str, float]:
     n = len(exposures)
     cured = exposures["cured"].to_numpy()
     redefaulted = exposures["redefaulted"].to_numpy()
-    n_cure = int(cured.sum())
-    n_redefault = int(redefaulted.sum())
 
+    merged = np.zeros(n, dtype=bool)
+    if merge_threshold_months is not None:
+        merged = redefaulted & (exposures["t_rd"].to_numpy() < merge_threshold_months)
+
+    treated_as_cured = cured & ~merged
+    treated_as_redefault = redefaulted & ~merged
+    n_cure = int(treated_as_cured.sum())
+    n_redefault = int(treated_as_redefault.sum())
+
+    merged_rr = 1 - (1 - exposures.loc[merged, "rr_before_redefault"]) * (
+        1 - exposures.loc[merged, "rr_after_redefault"]
+    )
     recoveries = pd.concat(
         [
             exposures.loc[~exposures["cured"], "rr"],
-            exposures.loc[exposures["redefaulted"], "rr_after_redefault"],
+            merged_rr,
+            exposures.loc[treated_as_redefault, "rr_after_redefault"],
         ]
     )
-    cured_ead = exposures.loc[cured, "ead"].sum()
+    cured_ead = exposures.loc[treated_as_cured, "ead"].sum()
 
     return {
         "pc": n_cure / (n + n_redefault),
         "prd": n_redefault / n_cure if n_cure > 0 else 0.0,
         "rr": recoveries.mean(),
         "rr_brd": (
-            exposures.loc[redefaulted, "rr_before_redefault"].mean() if n_redefault > 0 else 0.0
+            exposures.loc[treated_as_redefault, "rr_before_redefault"].mean()
+            if n_redefault > 0
+            else 0.0
         ),
-        "lgc": exposures.loc[cured, "loss"].sum() / cured_ead if n_cure > 0 else 0.0,
+        "lgc": (exposures.loc[treated_as_cured, "loss"].sum() / cured_ead if n_cure > 0 else 0.0),
     }

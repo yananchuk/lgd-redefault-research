@@ -12,9 +12,11 @@ def summarize(results: pd.DataFrame, sweep_param: str) -> pd.DataFrame:
     """Aggregate per-replication relative errors and raw LGD values into mean and SD.
 
     Args:
-        results: Raw output of `experiment.run_baseline`, one row per
+        results: Raw output of an experiment runner (`experiment.run_baseline`,
+            `run_complexity_sweep`, or `run_merge_compliance`), one row per
             (sweep value, replication).
-        sweep_param: Name of the swept column to group by.
+        sweep_param: Name of the column to group by, e.g. the swept parameter,
+            or `regime` for a naive-vs-compliant comparison.
 
     Returns:
         One row per sweep value, with `{column}_mean` and `{column}_sd` for each

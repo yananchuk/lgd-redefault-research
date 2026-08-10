@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from lgd_sim.dgp import DGPParams
-from lgd_sim.experiment import run_baseline, run_complexity_sweep
+from lgd_sim.experiment import run_baseline, run_complexity_sweep, run_merge_compliance
 
 BASELINE = DGPParams(pc=0.2, prd=0.1)
 ERROR_COLUMNS = {"lgd_basic_error", "lgd_lgc_error", "lgd_prd_error", "lgd_new_error"}
@@ -149,3 +149,99 @@ def test_run_complexity_sweep_redefault_count_grows_with_n_exposures():
     )
     mean_by_n = result.groupby("n_exposures")["n_redefault"].mean()
     assert mean_by_n[20_000] > mean_by_n[200]
+
+
+def test_run_merge_compliance_returns_expected_columns():
+    result = run_merge_compliance(
+        sweep_param="mean_cure_month",
+        sweep_values=[5.0, 20.0],
+        base_params=DGPParams(pc=0.2, prd=0.3),
+        n_exposures=500,
+        n_replications=3,
+        rng=np.random.default_rng(0),
+    )
+    expected = (
+        ERROR_COLUMNS | VALUE_COLUMNS | {"mean_cure_month", "regime", "n_redefault", "n_merged"}
+    )
+    assert set(result.columns) == expected
+
+
+def test_run_merge_compliance_row_count_matches_sweep_times_replications_times_regimes():
+    result = run_merge_compliance(
+        sweep_param="mean_cure_month",
+        sweep_values=[5.0, 20.0, 40.0],
+        base_params=DGPParams(pc=0.2, prd=0.3),
+        n_exposures=500,
+        n_replications=4,
+        rng=np.random.default_rng(0),
+    )
+    assert len(result) == 3 * 4 * 2
+
+
+def test_run_merge_compliance_reproducible_given_same_seed():
+    kwargs = {
+        "sweep_param": "mean_cure_month",
+        "sweep_values": [5.0, 20.0],
+        "base_params": DGPParams(pc=0.2, prd=0.3),
+        "n_exposures": 500,
+        "n_replications": 3,
+    }
+    a = run_merge_compliance(rng=np.random.default_rng(42), **kwargs)
+    b = run_merge_compliance(rng=np.random.default_rng(42), **kwargs)
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_run_merge_compliance_has_both_regimes():
+    result = run_merge_compliance(
+        sweep_param="mean_cure_month",
+        sweep_values=[20.0],
+        base_params=DGPParams(pc=0.2, prd=0.3),
+        n_exposures=500,
+        n_replications=2,
+        rng=np.random.default_rng(0),
+    )
+    assert set(result["regime"]) == {"naive", "compliant"}
+
+
+def test_run_merge_compliance_naive_and_compliant_share_the_same_simulated_portfolio():
+    result = run_merge_compliance(
+        sweep_param="mean_cure_month",
+        sweep_values=[20.0],
+        base_params=DGPParams(pc=0.2, prd=0.3),
+        n_exposures=500,
+        n_replications=2,
+        rng=np.random.default_rng(0),
+    )
+    naive = result[result["regime"] == "naive"].reset_index(drop=True)
+    compliant = result[result["regime"] == "compliant"].reset_index(drop=True)
+    pd.testing.assert_series_equal(naive["lgd_true"], compliant["lgd_true"], check_names=False)
+
+
+def test_run_merge_compliance_regimes_diverge_when_redefaults_are_fast():
+    result = run_merge_compliance(
+        sweep_param="mean_cure_month",
+        sweep_values=[55.0],
+        base_params=DGPParams(pc=0.2, prd=0.3),
+        n_exposures=5000,
+        n_replications=1,
+        rng=np.random.default_rng(0),
+    )
+    naive = result[result["regime"] == "naive"].iloc[0]
+    compliant = result[result["regime"] == "compliant"].iloc[0]
+    assert naive["lgd_basic_error"] != compliant["lgd_basic_error"]
+
+
+def test_run_merge_compliance_merged_share_grows_with_mean_cure_month():
+    result = run_merge_compliance(
+        sweep_param="mean_cure_month",
+        sweep_values=[5.0, 55.0],
+        base_params=DGPParams(pc=0.2, prd=0.3),
+        n_exposures=5000,
+        n_replications=20,
+        rng=np.random.default_rng(0),
+    )
+    naive = result[result["regime"] == "naive"]
+    merged_share = naive.groupby("mean_cure_month").apply(
+        lambda g: g["n_merged"].sum() / g["n_redefault"].sum(), include_groups=False
+    )
+    assert merged_share[55.0] > merged_share[5.0]

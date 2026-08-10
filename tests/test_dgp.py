@@ -41,6 +41,20 @@ def test_cured_and_never_redefaulted_exposures_have_zero_loss():
     assert (cured_forever["loss"] == 0).all()
 
 
+def test_t_cure_never_reaches_maturity():
+    params = DGPParams(pc=0.5, prd=0.3, mean_cure_month=65.0)
+    exposures = simulate_portfolio(params, n=20_000, rng=np.random.default_rng(0))
+    t_cure = exposures.loc[exposures["cured"], "t_cure"]
+    assert (t_cure < params.t_maturity).all()
+
+
+def test_t_rd_never_negative_at_high_mean_cure_month():
+    params = DGPParams(pc=0.5, prd=0.3, mean_cure_month=65.0)
+    exposures = simulate_portfolio(params, n=20_000, rng=np.random.default_rng(0))
+    t_rd = exposures.loc[exposures["redefaulted"], "t_rd"]
+    assert (t_rd >= 0).all()
+
+
 def test_swappable_recovery_distribution_shifts_mean():
     lower_mean_params = DGPParams(
         pc=0.2, prd=0.5, rr_after_redefault_alpha=0.15, rr_after_redefault_beta=0.4
@@ -83,3 +97,40 @@ def test_estimate_formula_inputs_handles_no_cures():
     assert inputs["pc"] == 0.0
     assert inputs["prd"] == 0.0
     assert inputs["lgc"] == 0.0
+
+
+def test_merge_threshold_none_matches_default_behavior():
+    params = DGPParams(pc=0.2, prd=0.3, mean_cure_month=20)
+    exposures = simulate_portfolio(params, n=5000, rng=np.random.default_rng(0))
+    assert estimate_formula_inputs(exposures) == estimate_formula_inputs(
+        exposures, merge_threshold_months=None
+    )
+
+
+def test_merge_threshold_excludes_early_redefaults_from_independent_count():
+    params = DGPParams(pc=0.2, prd=0.3, mean_cure_month=20)
+    exposures = simulate_portfolio(params, n=20_000, rng=np.random.default_rng(0))
+    n_merged = int((exposures["redefaulted"] & (exposures["t_rd"] < 9)).sum())
+    assert n_merged > 0
+
+    naive = estimate_formula_inputs(exposures)
+    compliant = estimate_formula_inputs(exposures, merge_threshold_months=9.0)
+    assert compliant["prd"] < naive["prd"]
+    assert compliant["pc"] < naive["pc"]
+
+
+def test_merge_threshold_zero_matches_default_behavior():
+    params = DGPParams(pc=0.2, prd=0.3, mean_cure_month=20)
+    exposures = simulate_portfolio(params, n=5000, rng=np.random.default_rng(0))
+    naive = estimate_formula_inputs(exposures)
+    compliant = estimate_formula_inputs(exposures, merge_threshold_months=0.0)
+    assert compliant["pc"] == pytest.approx(naive["pc"])
+    assert compliant["prd"] == pytest.approx(naive["prd"])
+
+
+def test_merge_threshold_handles_no_redefaults():
+    params = DGPParams(pc=0.2, prd=0.0)
+    exposures = simulate_portfolio(params, n=2000, rng=np.random.default_rng(0))
+    inputs = estimate_formula_inputs(exposures, merge_threshold_months=9.0)
+    assert inputs["prd"] == 0.0
+    assert inputs["rr_brd"] == 0.0
