@@ -114,3 +114,23 @@ $$rr_{brd} = \frac{t_{cure} + t_{rd} - 3}{T_{maturity}}$$
 The $-3$ subtracts the 90-day arrears window (EBA/GL/2016/07) before an exposure is even recognized as cured, so that window doesn't count toward accrued recovery.
 
 How this combines with the recovery collected once an exposure actually re-defaults, and how that feeds $LGD_{true}$ (the realized portfolio-level loss ratio, computed directly from simulated cash flows rather than from any of the four formulas above), is a simulation-side question, not a formula-derivation one - see `dgp_assumptions.md`'s "Recovery rate distributions."
+
+## A segmented variant: relaxing the shared-recovery assumption
+
+$LGD_{new}$'s derivation above requires the same recovery rate $RR$ to apply to a first default and to a redefaulted exposure's fresh loss after its $RR_{brd}$ credit. If redefault recovery instead follows its own distribution, $RR_{ard} \neq RR$, the formula has no way to represent that: it has exactly one $RR$ term, no second slot for a different rate. A variant that keeps the same structure but lets the redefault-loss term use its own rate needs only one change to the derivation above:
+
+$$LGD_{new} \cdot N = (N - N_c)(1-RR) + N_{rd}(1-RR_{brd})(1-RR) \quad\longrightarrow\quad LGD_{adj} \cdot N = (N - N_c)(1-RR) + N_{rd}(1-RR_{brd})(1-RR_{ard})$$
+
+Substituting the same $N_c$ and $N_{rd}$ identities established above and dividing through by $N$:
+
+$$LGD_{adj} = \frac{\big(1 - PC - PC \cdot P_{rd}\big)(1-RR) + PC \cdot P_{rd}(1-RR_{brd})(1-RR_{ard})}{1 - PC \cdot P_{rd}}$$
+
+### Consistency check
+
+Three boundary cases collapse $LGD_{adj}$ back to formulas already derived above:
+
+$$LGD_{adj}\Big|_{RR_{ard}=RR} = \frac{(1-RR)\big[(1 - PC - PC \cdot P_{rd}) + PC \cdot P_{rd}(1-RR_{brd})\big]}{1 - PC \cdot P_{rd}} = \frac{(1-RR)\big[(1-PC) - PC \cdot P_{rd} \cdot RR_{brd}\big]}{1 - PC \cdot P_{rd}} = LGD_{new}$$
+$$LGD_{adj}\Big|_{RR_{ard}=RR,\ RR_{brd}=0} = \frac{(1-PC)(1-RR)}{1 - PC \cdot P_{rd}} = LGD_{Prd}$$
+$$LGD_{adj}\Big|_{P_{rd}=0} = (1-PC)(1-RR) = LGD$$
+
+All three collapse exactly. These are among the algebraic-identity tests the simulation engine's test suite checks on deterministic inputs.

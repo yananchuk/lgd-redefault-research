@@ -9,13 +9,13 @@ The simulated population starts at the point of default: `simulate_portfolio` dr
 | Component | Baseline | Alternative scenario tested |
 |---|---|---|
 | Recovery rates | $rr$, $rr_{ard}$ i.i.d. $\text{Beta}(0.3, 0.3)$ | Misspecification: $rr_{ard} \sim \text{Beta}(0.15, 0.4)$ (lower mean) |
-| EAD | $ead \sim \mathcal{N}(1, 0.2)$, drawn once per exposure, carried through unchanged | Misspecification: deterministic function of time since cure |
+| EAD | $ead \sim \mathcal{N}(1, 0.2)$, drawn once per exposure, carried through unchanged; amortization between default entries is a rate ($RR_{brd}$) applied in the loss calculation, not a change to $ead$ itself | unchanged |
 | Cure timing | $t_{cure} \sim \text{Poisson}(\text{mean cure month})$ | unchanged |
 | Re-default timing | $t_{rd} \sim \text{Discrete-Uniform}(0, T_{maturity} - t_{cure})$ (flat hazard) | unchanged |
 | Maturity | Fixed at $T_{maturity} = 60$ months | unchanged |
 | $PC$, $P_{rd}$ | Fixed portfolio-level scalars, no covariates or macro effects | unchanged |
 | Re-default cycles | One cure-to-re-default cycle per exposure | unchanged |
-| Sensitivity sweep | $PC$, $P_{rd}$ swept 0-50%, base case $PC$ ~20%, $P_{rd}$ ~10% | n/a |
+| Sensitivity sweep | $PC$, $P_{rd}$ swept 0-50%, base case $PC$ ~20%, $P_{rd}$ ~10% | unchanged |
 | Formula inputs | $PC$, $P_{rd}$, $RR$, $RR_{brd}$ re-estimated from the simulated reference dataset (inflated-denominator $PC$), not the true generating parameters | Reference-dataset construction check: nine-month re-default merge rule (EBA/GL/2017/16 §101) applied or not |
 
 ## Recovery rate distributions
@@ -30,7 +30,11 @@ This per-exposure realized loss, applied to the exposure's $ead$, is what the si
 
 ## Exposure at default (EAD)
 
-$ead \sim \mathcal{N}(1, 0.2)$, drawn once per exposure at first default and carried through unchanged for the rest of its lifecycle, whether it never cures, cures and stays cured, or cures and later re-defaults. The balance paid down between cure and re-default is captured separately through $rr_{brd}$ (see derivation.md's "pre-re-default recovery term"), not by shrinking $ead$ itself. The baseline keeps $ead$ fixed at its first-default value for simplicity. A misspecification variant instead makes $ead$ at re-default a deterministic function of time since cure, an alternative amortization channel layered on top of the fixed baseline.
+$ead \sim \mathcal{N}(1, 0.2)$, drawn once per exposure at first default and carried through unchanged for the rest of its lifecycle, whether it never cures, cures and stays cured, or cures and later re-defaults. $ead$ itself is never shrunk to represent amortization between the first and second default entry; that effect is folded into the loss calculation through $RR_{brd}$ instead (derivation.md, "The pre-re-default recovery term"):
+
+$$RR_{brd} = \frac{t_{cure} + t_{rd} - 3}{T_{maturity}}, \quad \text{clipped to } [0, 1]$$
+
+a straight-line fraction of the loan term elapsed between curing and re-defaulting, standing in for how much of the balance has been paid down in the meantime. This fraction multiplies directly into the loss expression, $(1 - RR_{brd})(1 - RR_{ard})$ (see "Recovery rate distributions" above), rather than being subtracted from $ead$ first: amortization here is a rate applied at the point of loss, not a distinct balance recorded anywhere in the simulated data. The same holds on the calibration side, not just the generating side - see "Estimating formula inputs from the simulated data" below.
 
 ## Cure timing
 
@@ -42,9 +46,9 @@ $t_{rd} \sim \text{Discrete-Uniform}(0, T_{maturity} - t_{cure})$. This is a fla
 
 ## Re-default independence: the nine-month merge rule
 
-EBA/GL/2017/16 §101 requires institutions to treat a re-default occurring within nine months of an exposure's return to non-defaulted status as a continuation of the original default, not a second independent observation, for the purpose of LGD estimation. This is a distinct rule from the probation period EBA/GL/2016/07 defines before an exposure can exit default status in the first place - GL/2017/16 states explicitly that the nine months apply in addition to the probation period, not in place of it.
+EBA/GL/2017/16 §101 requires institutions to treat a re-default occurring within nine months of an exposure's return to non-defaulted status as a continuation of the original default, not a second independent observation, for the purpose of LGD estimation. This is a distinct rule from the probation period EBA/GL/2016/07 defines before an exposure can exit default status in the first place - EBA/GL/2017/16 states explicitly that the nine months apply in addition to the probation period, not in place of it.
 
-Neither this project's own `dgp.py` nor the prior R implementation it's derived from applied this rule before this check: every re-default was counted as an independent observation regardless of how soon after curing it happened. `estimate_formula_inputs`'s `merge_threshold_months` argument adds the compliant treatment as an option (default `None`, preserving the original naive behavior) rather than changing the default, so the baseline and complexity/robustness experiments are unaffected. A re-default with $t_{rd}$ under the threshold is excluded from the cured and re-defaulted counts, and its whole cure-to-re-default episode is folded into the same recovery-rate pool as a genuine first default, using its combined realized recovery $1-(1-rr_{brd})(1-rr_{ard})$ in place of a plain $rr$ draw.
+This project's simulated reference dataset didn't apply this rule before the reference-dataset construction check: every re-default was counted as an independent observation regardless of how soon after curing it happened. Compliant treatment is tested as an alternative to that naive default, applied only where a check specifically asks for it, so the baseline and complexity/robustness experiments are unaffected by its existence. A re-default within the nine-month threshold is excluded from the cured and re-defaulted counts, and its whole cure-to-re-default episode is folded into the same recovery-rate pool as a genuine first default, using its combined realized recovery $1-(1-rr_{brd})(1-rr_{ard})$ in place of a plain $rr$ draw.
 
 ## Maturity
 
@@ -63,6 +67,8 @@ Only one cure-to-re-default cycle per exposure is modeled. Repeated cycles are o
 The four LGD formulas aren't evaluated on the true generating $PC$ and $P_{rd}$ directly. Each simulation run re-estimates $PC$, $P_{rd}$, $RR$, and $RR_{brd}$ from the generated reference dataset the way a bank actually would: $PC$ as cured exposures divided by all logged default observations, not divided by first defaults alone. By default, every re-default counts as its own observation regardless of timing (the naive treatment used throughout the baseline and complexity/robustness experiments); whether that's the right thing to do under EBA/GL/2017/16 §101 is a separate question, addressed in "Re-default independence: the nine-month merge rule" above, not assumed here. That denominator inflation is a second, smaller source of bias, layered on top of the main one (treating the whole cured population as zero-loss regardless of later re-default, see derivation.md), and it's what makes the simulation's formula inputs match what an analyst would actually compute from a real reference dataset rather than an idealized one. $LGD_{true}$ is computed separately, directly from each exposure's realized loss, and never goes through this re-estimation step.
 
 $RR_{brd}$ is estimated as a plain sample mean of $rr_{brd}$ over the re-defaulted subsample, matching how $RR$ is estimated. Both enter the closed form as scalar rates (derivation.md, $PC \cdot P_{rd} \cdot RR_{brd}$). This matches the CRR/EBA calibration convention for LGD parameters. CRR Article 181(1)(a) requires LGD to be estimated as a default-weighted average, and EBA/GL/2017/16 states this explicitly for the observed average LGD (§154: "weighted by the number of defaults included in the calculation") and the long-run average LGD (§150: "weighted by a number of defaults"). $LGC$ and $LGD_{true}$ are loss-dollars-over-EAD-dollars ratios by definition, a separate kind of quantity from a sample-average LGD parameter, so they carry their own EAD weighting under that definition.
+
+The segmented variant of the re-default-aware formula (derivation.md, "A segmented variant: relaxing the shared-recovery assumption") needs a different kind of $RR$ estimate than the one above. The plain pooled $RR$ mixes recovery from never-cured exposures, merged exposures' compound recovery, and independent re-defaults' fresh-loss recovery; once redefault recovery is suspected to follow its own distribution, that pooling is exactly the problem the segmented variant exists to avoid. A second estimate of $RR$ is used for this case instead, built from the never-cured population plus merged exposures' compound recovery, holding out the independent-redefault population entirely: a merged exposure has no independent-redefault observation to attribute its recovery to instead, since it's treated as one continuous default rather than a second logged observation, so it joins this pool the same way it already joins the plain pooled $RR$ above. An independent re-default, by contrast, is still logged as its own default observation in the reference dataset, the same population $P_{rd}$ is computed from; what changes is which pool calibrates its recovery. That population gets its own estimate, $RR_{ard}$, kept separate rather than blended into the first.
 
 ## Sensitivity sweep ranges
 
