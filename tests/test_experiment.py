@@ -5,7 +5,12 @@ import pandas as pd
 import pytest
 
 from lgd_sim.dgp import DGPParams
-from lgd_sim.experiment import run_baseline, run_complexity_sweep, run_merge_compliance
+from lgd_sim.experiment import (
+    run_adjustment_complexity_sweep,
+    run_baseline,
+    run_complexity_sweep,
+    run_merge_compliance,
+)
 
 BASELINE = DGPParams(pc=0.2, prd=0.1)
 ERROR_COLUMNS = {"lgd_basic_error", "lgd_lgc_error", "lgd_prd_error", "lgd_new_error"}
@@ -245,3 +250,72 @@ def test_run_merge_compliance_merged_share_grows_with_mean_cure_month():
         lambda g: g["n_merged"].sum() / g["n_redefault"].sum(), include_groups=False
     )
     assert merged_share[55.0] > merged_share[5.0]
+
+
+ADJUSTMENT_COMPLEXITY_PARAMS = DGPParams(
+    pc=0.2,
+    prd=0.3,
+    mean_cure_month=40.0,
+    rr_after_redefault_alpha=0.15,
+    rr_after_redefault_beta=0.4,
+)
+
+
+def test_run_adjustment_complexity_sweep_returns_expected_columns():
+    result = run_adjustment_complexity_sweep(
+        n_exposures_values=[200, 1000],
+        base_params=ADJUSTMENT_COMPLEXITY_PARAMS,
+        n_replications=3,
+        rng=np.random.default_rng(0),
+    )
+    expected = {
+        "n_exposures",
+        "regime",
+        "lgd_true",
+        "lgd_new",
+        "lgd_new_adj",
+        "lgd_new_error",
+        "lgd_new_adj_error",
+    }
+    assert set(result.columns) == expected
+
+
+def test_run_adjustment_complexity_sweep_row_count_matches_sweep_times_replications_times_regimes():
+    result = run_adjustment_complexity_sweep(
+        n_exposures_values=[200, 500, 1000],
+        base_params=ADJUSTMENT_COMPLEXITY_PARAMS,
+        n_replications=4,
+        rng=np.random.default_rng(0),
+    )
+    assert len(result) == 3 * 4 * 2
+
+
+def test_run_adjustment_complexity_sweep_reproducible_given_same_seed():
+    kwargs = {
+        "n_exposures_values": [200, 1000],
+        "base_params": ADJUSTMENT_COMPLEXITY_PARAMS,
+        "n_replications": 3,
+    }
+    a = run_adjustment_complexity_sweep(rng=np.random.default_rng(42), **kwargs)
+    b = run_adjustment_complexity_sweep(rng=np.random.default_rng(42), **kwargs)
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_run_adjustment_complexity_sweep_sweeps_n_exposures():
+    result = run_adjustment_complexity_sweep(
+        n_exposures_values=[200, 1000],
+        base_params=ADJUSTMENT_COMPLEXITY_PARAMS,
+        n_replications=2,
+        rng=np.random.default_rng(0),
+    )
+    assert set(result["n_exposures"]) == {200, 1000}
+
+
+def test_run_adjustment_complexity_sweep_has_both_regimes():
+    result = run_adjustment_complexity_sweep(
+        n_exposures_values=[500],
+        base_params=ADJUSTMENT_COMPLEXITY_PARAMS,
+        n_replications=2,
+        rng=np.random.default_rng(0),
+    )
+    assert set(result["regime"]) == {"naive", "compliant"}

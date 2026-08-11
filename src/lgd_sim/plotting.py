@@ -297,8 +297,10 @@ def plot_levels_regime_comparison(
     return fig
 
 
-def _draw_adjustment_comparison(ax: Axes, summary: pd.DataFrame, sweep_param: str) -> None:
-    """Draw lgd_new's relative error against its segmented-recovery variant, onto an existing Axes.
+def _draw_adjustment_comparison(
+    ax: Axes, summary: pd.DataFrame, sweep_param: str, stat: str = "mean"
+) -> None:
+    """Draw lgd_new's relative-error mean or SD against its segmented-recovery variant's, onto an existing Axes.
 
     A two-series chart rather than the usual four, so it doesn't reuse
     `_draw_bias_sweep`, which iterates over the fixed `FORMULA_COLORS` set.
@@ -306,7 +308,7 @@ def _draw_adjustment_comparison(ax: Axes, summary: pd.DataFrame, sweep_param: st
     x = summary[sweep_param]
     ax.plot(
         x,
-        summary["lgd_new_error_mean"],
+        summary[f"lgd_new_error_{stat}"],
         label="Re-default-aware",
         color=FORMULA_COLORS["lgd_new_error"],
         linewidth=2,
@@ -314,13 +316,13 @@ def _draw_adjustment_comparison(ax: Axes, summary: pd.DataFrame, sweep_param: st
     )
     ax.plot(
         x,
-        summary["lgd_new_adj_error_mean"],
+        summary[f"lgd_new_adj_error_{stat}"],
         label="Adjusted",
         color="#7b3fa0",
         linewidth=2,
-        linestyle="-",
+        linestyle="-.",
     )
-    ax.set_ylabel("Relative error")
+    ax.set_ylabel("Relative error" if stat == "mean" else "Error SD")
     ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=1))
 
 
@@ -371,6 +373,46 @@ def plot_adjustment_comparison(
         ax_compliant.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
 
     handles, labels = ax_naive.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
+    return fig
+
+
+def plot_adjustment_bias_variance_decomposition(
+    summary: pd.DataFrame, sweep_param: str, x_label: str, title: str, x_log: bool = True
+) -> Figure:
+    """Plot `lgd_new`'s bias and SD side by side against its segmented-recovery variant's.
+
+    Args:
+        summary: Aggregated per-sweep-value mean and SD for `lgd_new_error`
+            and `lgd_new_adj_error` (see `experiment.run_adjustment_complexity_sweep`).
+        sweep_param: Name of the swept column, used as the x-axis values.
+        x_label: Human-readable x-axis label.
+        title: Figure title.
+        x_log: Whether to plot the x-axis on a log scale, useful when the
+            sweep spans multiple orders of magnitude.
+
+    Returns:
+        The rendered figure, ready to save or display.
+    """
+    set_style()
+    fig, (ax_bias, ax_sd) = plt.subplots(1, 2, figsize=(FIGURE_SIZE[0] * 1.7, FIGURE_SIZE[1]))
+
+    _draw_adjustment_comparison(ax_bias, summary, sweep_param, stat="mean")
+    ax_bias.set_title("Bias")
+    ax_bias.set_xlabel(x_label)
+    if x_log:
+        ax_bias.set_xscale("log")
+
+    _draw_adjustment_comparison(ax_sd, summary, sweep_param, stat="sd")
+    ax_sd.set_title("Standard deviation")
+    ax_sd.set_xlabel(x_label)
+    ax_sd.set_ylabel(None)
+    if x_log:
+        ax_sd.set_xscale("log")
+
+    handles, labels = ax_bias.get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
     fig.suptitle(title)
     fig.tight_layout(rect=(0, 0.08, 1, 0.95))

@@ -252,3 +252,61 @@ def run_adjustment_comparison(
                 )
 
     return pd.DataFrame(rows)
+
+
+def run_adjustment_complexity_sweep(
+    n_exposures_values: Sequence[int],
+    base_params: DGPParams,
+    n_replications: int,
+    rng: np.random.Generator,
+    merge_threshold_months: float = 9.0,
+) -> pd.DataFrame:
+    """Sweep portfolio size and compare `lgd_new` against its segmented-recovery variant.
+
+    Tests whether the segmented variant's unbiasedness under misspecified
+    recovery (`run_adjustment_comparison`) holds at smaller portfolio sizes,
+    where the independent-redefault pool its `rr_ard` estimate draws from
+    has fewer observations to work with than at the portfolio size used
+    elsewhere in that comparison.
+
+    Args:
+        n_exposures_values: Portfolio sizes to simulate.
+        base_params: DGP parameters, held fixed across every sweep value.
+        n_replications: Number of independent replications per sweep value.
+        rng: Seeded random generator, advanced across every replication.
+        merge_threshold_months: The independence threshold the compliant regime
+            applies (default: the regulatory nine months).
+
+    Returns:
+        One row per (n_exposures, replication, regime), with `n_exposures`,
+        `regime` ("naive" or "compliant"), `lgd_true`, `lgd_new`,
+        `lgd_new_adj`, and each formula's relative error against `lgd_true`.
+    """
+    rows = []
+    for n in n_exposures_values:
+        for _ in range(n_replications):
+            exposures = simulate_portfolio(base_params, n, rng)
+            lgd_true_value = true_lgd(exposures)
+            for regime, threshold in (("naive", None), ("compliant", merge_threshold_months)):
+                inputs = estimate_formula_inputs(exposures, merge_threshold_months=threshold)
+                lgd_new_value = lgd_new(inputs["pc"], inputs["rr"], inputs["prd"], inputs["rr_brd"])
+                lgd_new_adj_value = lgd_new_adj(
+                    inputs["pc"],
+                    inputs["rr_homogeneous"],
+                    inputs["prd"],
+                    inputs["rr_brd"],
+                    inputs["rr_ard"],
+                )
+                rows.append(
+                    {
+                        "n_exposures": n,
+                        "regime": regime,
+                        "lgd_true": lgd_true_value,
+                        "lgd_new": lgd_new_value,
+                        "lgd_new_adj": lgd_new_adj_value,
+                        "lgd_new_error": lgd_new_value / lgd_true_value - 1,
+                        "lgd_new_adj_error": lgd_new_adj_value / lgd_true_value - 1,
+                    }
+                )
+
+    return pd.DataFrame(rows)
