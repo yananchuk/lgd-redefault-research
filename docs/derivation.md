@@ -4,7 +4,7 @@ This walks through each formula from the underlying cash-flow accounting, indepe
 
 ## Setup
 
-Consider a portfolio of exposures that have defaulted. A fraction $PC$ of them cure and return to performing status. Of the cured exposures, a fraction $P_{rd}$ re-default before the end of the observation window. Under EBA/GL/2017/16 §101, a re-defaulted exposure is treated as a new, independent default observation, not a continuation of the first one, provided the re-default happens nine months or more after the return to non-defaulted status; the formulas below assume that condition holds (see `dgp_assumptions.md`'s "Re-default independence: the nine-month merge rule" for what happens when it doesn't).
+Consider a portfolio of exposures that have defaulted. A fraction $PC$ of them cure and return to performing status. Of the cured exposures, a fraction $P_{rd}$ re-default before the end of the observation window. Under EBA/GL/2017/16 §101, a re-defaulted exposure is treated as a new, independent default observation, not a continuation of the first one, provided the re-default happens nine months or more after the return to non-defaulted status; the formulas below assume that condition holds (see [`dgp_assumptions.md`'s "Re-default independence: the nine-month merge rule"](dgp_assumptions.md#re-default-independence-the-nine-month-merge-rule) for what happens when it doesn't).
 
 $RR$ is the recovery rate on exposures that never cure. $RR_{brd}$ is the recovery collected between curing and re-defaulting, for the exposures that do re-default.
 
@@ -90,7 +90,7 @@ Substituting $N_c = PC(N+N_{rd})$ and $N_{rd} = \frac{PC \cdot P_{rd} \cdot N}{1
 
 $$LGD_{new} = \frac{(1-RR)\big[(1-PC) - PC \cdot P_{rd} \cdot RR_{brd}\big]}{1 - PC \cdot P_{rd}}$$
 
-This requires the same recovery rate $RR$ to apply to a first default and to the fresh loss a redefaulted exposure faces after its $RR_{brd}$ credit. `dgp_assumptions.md`'s "Recovery rate distributions" section already states this assumption explicitly as load-bearing, not an incidental detail.
+This requires the same recovery rate $RR$ to apply to a first default and to the fresh loss a redefaulted exposure faces after its $RR_{brd}$ credit. [`dgp_assumptions.md`'s "Recovery rate distributions" section](dgp_assumptions.md#recovery-rate-distributions) already states this assumption explicitly as load-bearing, not an incidental detail.
 
 $PC$ and $RR$ here are the same parameters the basic model already calibrates; nothing about how they're estimated changes. The only new inputs are $P_{rd}$ and $RR_{brd}$, layered on top of an existing pipeline rather than replacing it. That matters because this formula is also the only one of the three that follows an exposure's full lifetime rather than truncating at cure: the basic model stops accounting the moment an exposure cures, and LGC flattens everything that happens afterward into one surcharge with no record of when or how much was recovered. Tracking the interval between cure and re-default explicitly, instead of discarding it, is what keeps this formula aligned with the actual realized cash flow over the exposure's life, and with the regulatory treatment of re-default as a new observation rather than a footnote to the first one. $LGD_{Prd}$ above is exactly this formula's $RR_{brd} = 0$ special case: with no balance left to credit, the multiplicative-vs-additive distinction disappears.
 
@@ -113,7 +113,7 @@ $$rr_{brd} = \frac{t_{cure} + t_{rd} - 3}{T_{maturity}}$$
 
 The $-3$ subtracts the 90-day arrears window (EBA/GL/2016/07) before an exposure is even recognized as cured, so that window doesn't count toward accrued recovery.
 
-How this combines with the recovery collected once an exposure actually re-defaults, and how that feeds $LGD_{true}$ (the realized portfolio-level loss ratio, computed directly from simulated cash flows rather than from any of the four formulas above), is a simulation-side question, not a formula-derivation one - see `dgp_assumptions.md`'s "Recovery rate distributions."
+How this combines with the recovery collected once an exposure actually re-defaults, and how that feeds $LGD_{true}$ (the realized portfolio-level loss ratio, computed directly from simulated cash flows rather than from any of the four formulas above), is a simulation-side question, not a formula-derivation one - see [`dgp_assumptions.md`'s "Recovery rate distributions"](dgp_assumptions.md#recovery-rate-distributions).
 
 ## A segmented variant: relaxing the shared-recovery assumption
 
