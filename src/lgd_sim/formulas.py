@@ -72,3 +72,35 @@ def lgd_new(
         The re-default-aware LGD estimate.
     """
     return (1 - rr) * ((1 - pc) - pc * prd * rr_brd) / (1 - pc * prd)
+
+
+def lgd_new_adj(
+    pc: FloatOrArray,
+    rr: FloatOrArray,
+    prd: FloatOrArray,
+    rr_brd: FloatOrArray,
+    rr_ard: FloatOrArray,
+) -> FloatOrArray:
+    """Re-default-aware LGD estimate with a separate rate for the redefault fresh loss.
+
+    `lgd_new` assumes the same recovery rate applies to a first default and
+    to a redefaulted exposure's fresh loss after its `rr_brd` credit; this
+    variant drops that assumption (derivation.md, "A segmented variant:
+    relaxing the shared-recovery assumption") and lets the redefault fresh
+    loss use its own rate `rr_ard` instead of reusing `rr`. Collapses to
+    `lgd_new` when `rr_ard == rr`, to `lgd_prd` when additionally
+    `rr_brd == 0`, and to `lgd_basic` when `prd == 0`.
+
+    Args:
+        pc: Cure probability.
+        rr: Recovery rate on exposures that never cure.
+        prd: Probability that a cured exposure re-defaults before maturity.
+        rr_brd: Recovery collected between curing and re-defaulting.
+        rr_ard: Recovery rate on a redefaulted exposure's fresh loss.
+
+    Returns:
+        The segmented re-default-aware LGD estimate.
+    """
+    return ((1 - pc - pc * prd) * (1 - rr) + pc * prd * (1 - rr_brd) * (1 - rr_ard)) / (
+        1 - pc * prd
+    )

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from lgd_sim.dgp import DGPParams, estimate_formula_inputs, simulate_portfolio, true_lgd
-from lgd_sim.formulas import lgd_basic, lgd_lgc, lgd_new, lgd_prd
+from lgd_sim.formulas import lgd_basic, lgd_lgc, lgd_new, lgd_new_adj, lgd_prd
 
 SweepParam = Literal["prd", "pc", "mean_cure_month"]
 
@@ -177,6 +177,77 @@ def run_merge_compliance(
                         "n_redefault": n_redefault,
                         "n_merged": n_merged,
                         **_formula_values(inputs, lgd_true_value),
+                    }
+                )
+
+    return pd.DataFrame(rows)
+
+
+def run_adjustment_comparison(
+    sweep_param: SweepParam,
+    sweep_values: Sequence[float],
+    base_params: DGPParams,
+    n_exposures: int,
+    n_replications: int,
+    rng: np.random.Generator,
+    merge_threshold_months: float = 9.0,
+) -> pd.DataFrame:
+    """Sweep one DGP parameter and compare `lgd_new` against its segmented-recovery variant.
+
+    `lgd_new` assumes the same recovery rate applies to a first default and
+    to a redefaulted exposure's fresh loss; `lgd_new_adj` doesn't, using the
+    separately estimated `rr_homogeneous` and `rr_ard` `estimate_formula_inputs`
+    computes but the other four formulas never touch (docs/derivation.md, "A
+    segmented variant: relaxing the shared-recovery assumption"; docs/dgp_assumptions.md,
+    "Estimating formula inputs from the simulated data"). Both formulas are
+    evaluated under naive and merge-compliant estimation, the same regime
+    split `run_merge_compliance` applies to the original four formulas,
+    since `rr_ard` is estimated only from re-defaults `estimate_formula_inputs`
+    doesn't merge into the cured population, and so moves between regimes
+    exactly as `rr_brd` does.
+
+    Args:
+        sweep_param: Which `DGPParams` field to vary ("prd", "pc", or "mean_cure_month").
+        sweep_values: Values to substitute for `sweep_param`, holding the rest of
+            `base_params` fixed.
+        base_params: Baseline DGP parameters; `sweep_param` is overridden per sweep value.
+        n_exposures: Number of exposures simulated per replication.
+        n_replications: Number of independent replications per sweep value.
+        rng: Seeded random generator, advanced across every replication.
+        merge_threshold_months: The independence threshold the compliant regime
+            applies (default: the regulatory nine months).
+
+    Returns:
+        One row per (sweep value, replication, regime), with the swept
+        parameter's value, `regime` ("naive" or "compliant"), `lgd_true`,
+        `lgd_new`, `lgd_new_adj`, and each formula's relative error against
+        `lgd_true`.
+    """
+    rows = []
+    for value in sweep_values:
+        params = dataclasses.replace(base_params, **{sweep_param: value})
+        for _ in range(n_replications):
+            exposures = simulate_portfolio(params, n_exposures, rng)
+            lgd_true_value = true_lgd(exposures)
+            for regime, threshold in (("naive", None), ("compliant", merge_threshold_months)):
+                inputs = estimate_formula_inputs(exposures, merge_threshold_months=threshold)
+                lgd_new_value = lgd_new(inputs["pc"], inputs["rr"], inputs["prd"], inputs["rr_brd"])
+                lgd_new_adj_value = lgd_new_adj(
+                    inputs["pc"],
+                    inputs["rr_homogeneous"],
+                    inputs["prd"],
+                    inputs["rr_brd"],
+                    inputs["rr_ard"],
+                )
+                rows.append(
+                    {
+                        sweep_param: value,
+                        "regime": regime,
+                        "lgd_true": lgd_true_value,
+                        "lgd_new": lgd_new_value,
+                        "lgd_new_adj": lgd_new_adj_value,
+                        "lgd_new_error": lgd_new_value / lgd_true_value - 1,
+                        "lgd_new_adj_error": lgd_new_adj_value / lgd_true_value - 1,
                     }
                 )
 

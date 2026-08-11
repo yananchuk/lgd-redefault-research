@@ -211,18 +211,23 @@ def plot_regime_comparison(
     x_label: str,
     title: str,
     x_as_percent: bool = True,
+    left_title: str = "Naive estimation",
+    right_title: str = "Compliant estimation (9-month merge)",
 ) -> Figure:
-    """Plot each formula's bias side by side under naive vs merge-compliant estimation.
+    """Plot each formula's bias side by side under two regimes, e.g. naive vs merge-compliant estimation.
 
     Args:
-        naive_summary: Output of `metrics.summarize` restricted to the "naive"
-            regime rows of `experiment.run_merge_compliance`'s output.
-        compliant_summary: Same, restricted to the "compliant" regime rows.
+        naive_summary: Output of `metrics.summarize` for the left panel, e.g.
+            the "naive" regime rows of `experiment.run_merge_compliance`'s
+            output, or a correctly specified DGP's `run_baseline` output.
+        compliant_summary: Same, for the right panel.
         sweep_param: Name of the swept column, used as the x-axis values.
         x_label: Human-readable x-axis label.
         title: Figure title.
         x_as_percent: Whether the swept parameter is a 0-1 fraction (formatted
             as a percentage) rather than a plain count or other unit.
+        left_title: Left panel's own title.
+        right_title: Right panel's own title.
 
     Returns:
         The rendered figure, ready to save or display.
@@ -233,11 +238,11 @@ def plot_regime_comparison(
     )
 
     _draw_bias_sweep(ax_naive, naive_summary, sweep_param, x_as_percent)
-    ax_naive.set_title("Naive estimation")
+    ax_naive.set_title(left_title)
     ax_naive.set_xlabel(x_label)
 
     _draw_bias_sweep(ax_compliant, compliant_summary, sweep_param, x_as_percent)
-    ax_compliant.set_title("Compliant estimation (9-month merge)")
+    ax_compliant.set_title(right_title)
     ax_compliant.set_xlabel(x_label)
     ax_compliant.set_ylabel(None)
 
@@ -284,6 +289,86 @@ def plot_levels_regime_comparison(
     ax_compliant.set_title("Compliant estimation (9-month merge)")
     ax_compliant.set_xlabel(x_label)
     ax_compliant.set_ylabel(None)
+
+    handles, labels = ax_naive.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.05))
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
+    return fig
+
+
+def _draw_adjustment_comparison(ax: Axes, summary: pd.DataFrame, sweep_param: str) -> None:
+    """Draw lgd_new's relative error against its segmented-recovery variant, onto an existing Axes.
+
+    A two-series chart rather than the usual four, so it doesn't reuse
+    `_draw_bias_sweep`, which iterates over the fixed `FORMULA_COLORS` set.
+    """
+    x = summary[sweep_param]
+    ax.plot(
+        x,
+        summary["lgd_new_error_mean"],
+        label="Re-default-aware",
+        color=FORMULA_COLORS["lgd_new_error"],
+        linewidth=2,
+        linestyle=FORMULA_LINESTYLES["lgd_new_error"],
+    )
+    ax.plot(
+        x,
+        summary["lgd_new_adj_error_mean"],
+        label="Adjusted",
+        color="#7b3fa0",
+        linewidth=2,
+        linestyle="-",
+    )
+    ax.set_ylabel("Relative error")
+    ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=1))
+
+
+def plot_adjustment_comparison(
+    naive_summary: pd.DataFrame,
+    compliant_summary: pd.DataFrame,
+    sweep_param: str,
+    x_label: str,
+    title: str,
+    x_as_percent: bool = True,
+    left_title: str = "Naive estimation",
+    right_title: str = "Compliant estimation (9-month merge)",
+) -> Figure:
+    """Plot `lgd_new`'s relative error against its segmented-recovery variant, under two regimes.
+
+    Args:
+        naive_summary: Aggregated per-sweep-value means for `lgd_new_error` and
+            `lgd_new_adj_error` under naive estimation (see
+            `experiment.run_adjustment_comparison`).
+        compliant_summary: Same, under merge-compliant estimation.
+        sweep_param: Name of the swept column, used as the x-axis values.
+        x_label: Human-readable x-axis label.
+        title: Figure title.
+        x_as_percent: Whether the swept parameter is a 0-1 fraction (formatted
+            as a percentage) rather than a plain count or other unit.
+        left_title: Left panel's own title.
+        right_title: Right panel's own title.
+
+    Returns:
+        The rendered figure, ready to save or display.
+    """
+    set_style()
+    fig, (ax_naive, ax_compliant) = plt.subplots(
+        1, 2, figsize=(FIGURE_SIZE[0] * 1.7, FIGURE_SIZE[1])
+    )
+
+    _draw_adjustment_comparison(ax_naive, naive_summary, sweep_param)
+    ax_naive.set_title(left_title)
+    ax_naive.set_xlabel(x_label)
+
+    _draw_adjustment_comparison(ax_compliant, compliant_summary, sweep_param)
+    ax_compliant.set_title(right_title)
+    ax_compliant.set_xlabel(x_label)
+    ax_compliant.set_ylabel(None)
+
+    if x_as_percent:
+        ax_naive.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+        ax_compliant.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
 
     handles, labels = ax_naive.get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.05))

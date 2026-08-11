@@ -118,6 +118,21 @@ def estimate_formula_inputs(
     NaN, since it always appears multiplied by a probability that is itself
     0 in the formulas.
 
+    Also returns two segmented estimates `lgd_new` doesn't use: `rr_homogeneous`
+    (recovery on the population assumed to share one recovery distribution:
+    never-cured exposures, plus any merged exposures' compound recovery) and
+    `rr_ard` (recovery on independent re-defaults' fresh loss only, kept in
+    its own segment rather than pooled with `rr_homogeneous`). These exist
+    for `lgd_new_adj`, which doesn't assume the same recovery rate applies
+    to a first default and to a redefaulted exposure's fresh loss. An
+    independent re-default is still logged as its own default observation
+    in the reference dataset, the same population `prd` below is computed
+    from; only which segment calibrates its recovery changes. A merged
+    exposure has no independent-redefault observation to put in that segment
+    at all, since compliance treats its cure-to-redefault episode as one
+    continuous default, so its compound recovery joins `rr_homogeneous`
+    instead, the same way it joins the pooled `rr` below.
+
     Args:
         exposures: Output of `simulate_portfolio`.
         merge_threshold_months: If set, a re-default within this many months
@@ -131,7 +146,7 @@ def estimate_formula_inputs(
             counted as independent regardless of timing.
 
     Returns:
-        A dict with keys "pc", "prd", "rr", "rr_brd", "lgc".
+        A dict with keys "pc", "prd", "rr", "rr_brd", "lgc", "rr_homogeneous", "rr_ard".
     """
     n = len(exposures)
     cured = exposures["cured"].to_numpy()
@@ -164,6 +179,12 @@ def estimate_formula_inputs(
         "rr": recoveries.mean(),
         "rr_brd": (
             exposures.loc[treated_as_redefault, "rr_before_redefault"].mean()
+            if n_redefault > 0
+            else 0.0
+        ),
+        "rr_homogeneous": pd.concat([exposures.loc[~exposures["cured"], "rr"], merged_rr]).mean(),
+        "rr_ard": (
+            exposures.loc[treated_as_redefault, "rr_after_redefault"].mean()
             if n_redefault > 0
             else 0.0
         ),
