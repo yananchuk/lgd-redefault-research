@@ -1,4 +1,4 @@
-# Deriving the four LGD formulas
+# Deriving the five LGD formulas
 
 This walks through each formula from the underlying cash-flow accounting, independent of any prior implementation, and checks that they collapse to each other correctly at the boundary case.
 
